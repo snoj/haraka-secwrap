@@ -1,0 +1,11 @@
+{
+  "example.com": {
+    "addrs": {
+      "*": {
+        "type": "forward"
+        ,"addr": "user@example.com"
+        ,"key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: GnuPG v2.0.22 (GNU/Linux)\n\n\n-----END PGP PUBLIC KEY BLOCK-----\n"
+      }
+    }
+  }
+}
