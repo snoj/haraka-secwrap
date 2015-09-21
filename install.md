@@ -17,7 +17,7 @@ cp -R ./haraka-secwrap/* ./secwrap-instance
 ## Install some npm modules
 ```
 cd ./secwrap-instance
-npm install lodash memory-stream openpgp
+npm install lodash memory-stream openpgp mailcomposer
 ```
 
 ## Edit the rcpt_to.secwrap file

@@ -2,7 +2,8 @@ var
   Address = require('./address').Address,
   util = require('util'),
   outbound = require('./outbound'),
-  openpgp = require('openpgp');
+  openpgp = require('openpgp'),
+  MailComposer = require('mailcomposer').MailComposer;
 var _ = require('lodash');
 var MemoryStream = require('memory-stream');
 
@@ -32,13 +33,6 @@ exports.secwrap_allowed = function(next, connection, params) {
       connection.transaction.parse_body = true;
       return next(OK);
     }
-    /*connection.transaction.rcpt_to.pop();
-    connection.relaying = true;
-    _secwrap.forEach(function(address) {
-      plugin.loginfo('Relaying to: ' + address);
-      connection.transaction.rcpt_to.push(new Address('<' + address + '>'));
-    });
-    return next(OK);*/
   }
   next(CONT);
 };
@@ -64,7 +58,17 @@ exports.secwrap_queue = function(next, connection, params) {
       ms.on('finish', function() {
         var publicKey = openpgp.key.readArmored(_secwrap.key);
         openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
-          
+          var mci = new MailComposer();
+          mci.setMessageOption({
+            from: mail_from
+            ,to: rcpt_to
+            ,subject: "Encrypted Message"
+          });
+          mci.addAttachment({
+            filename: "email.eml.gpg"
+            ,contents: encMsg
+            ,contentType: "application/pgp-encrypted"
+          })
           var contents = [
             "From: " + mail_from,
             "To: " + _secwrap.addr,
@@ -75,8 +79,13 @@ exports.secwrap_queue = function(next, connection, params) {
             "",
             encMsg
           ];
-          outbound.send_email(mail_from, _secwrap.addr, contents.join("\n"));
-          next(OK);
+          mci.buildMessage(function(err, compiledMsg) {
+            if(!!err)
+              return next(DENY, "Encryption error");
+
+            outbound.send_email(mail_from, _secwrap.addr, compiledMsg);
+            next(OK);
+          });
         }).catch(function() {
           next(DENY, "promise exception");
         });
