@@ -1,2 +1,10 @@
 v1
 	encrypt message and forward to another address
+
+
+vX - aka "ideas"
+	database for users/keys and email storage
+	http interface to manage profiles/public keys
+	webmail
+	http version of smtp
+	keybase.io integration
