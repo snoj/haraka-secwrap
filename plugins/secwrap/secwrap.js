@@ -1,34 +1,32 @@
-var
-  Address = require('./address').Address,
+var _ = require('lodash'),
   util = require('util'),
-  outbound = require('./outbound'),
+  plugin = null,
+  Address = require('./address').Address,
+  aliases = {},
   openpgp = require('openpgp'),
-  MailComposer = require('mailcomposer').MailComposer;
-var _ = require('lodash');
-var MemoryStream = require('memory-stream');
+  outbound = require('./outbound'),
+  MailComposer = require('mailcomposer').MailComposer,
+  MemoryStream = require('memory-stream');
 
-exports.register = function () {
-  //this.logdebug("openpgp", openpgp.encryptMessage);
-  //this.logdebug("outbound", outbound.send_email);
+exports.register = function() {
+  plugin = this;
+  aliases = plugin.config.get('secwrap', 'json', function() {
+    aliases = plugin.config.get('secwrap', 'json');
+  });
 
-  this.logdebug("config", this.config.get('rcpt_to.secwrap', 'json'));
-  
   this.register_hook('rcpt', 'secwrap_allowed');
   this.register_hook('queue', 'secwrap_queue');
 };
 
-exports.secwrap_allowed = function(next, connection, params) {
-  var
-    plugin = this,
-    aliases = this.config.get('rcpt_to.secwrap', 'json') || {},
-    rcpt = params[0],
-    _secwrap;
-  if(aliases[rcpt.host] && aliases[rcpt.host].addrs && (aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"])) {
-    _secwrap = aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"];
-    /*if(!util.isArray(_secwrap))
-      _secwrap = [ _secwrap ];*/
 
-    if(!!_secwrap) {
+exports.secwrap_allowed = function(next, connection, params) {
+  var 
+      rcpt = params[0],
+      _secwrap;
+  
+  if (aliases[rcpt.host] && aliases[rcpt.host].addrs && (aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"])) {
+    _secwrap = aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"];
+    if (!!_secwrap) {
       connection._secwrap = _secwrap
       connection.transaction.parse_body = true;
       return next(OK);
@@ -39,48 +37,39 @@ exports.secwrap_allowed = function(next, connection, params) {
 
 exports.secwrap_queue = function(next, connection, params) {
 
-  if(!!!connection._secwrap) 
+  if (!!!connection._secwrap) 
     return next(CONT);
 
   var transaction = connection.transaction;
   var mail_from = transaction.mail_from;
   var rcpt_to = transaction.rcpt_to;
   var _secwrap = connection._secwrap;
-  var msg = "";
-  var data;
 
-  if(!!transaction.body) {
-    try{
-      var plugin = this;
+  if (!!transaction.body) {
+    try {
       var ms = new MemoryStream();
       transaction.message_stream.pipe(ms);
       
       ms.on('finish', function() {
         var publicKey = openpgp.key.readArmored(_secwrap.key);
+
         openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
           var mci = new MailComposer();
+
           mci.setMessageOption({
             from: mail_from
             ,to: rcpt_to
             ,subject: "Encrypted Message"
           });
+
           mci.addAttachment({
             filename: "email.eml.gpg"
             ,contents: encMsg
             ,contentType: "application/pgp-encrypted"
-          })
-          var contents = [
-            "From: " + mail_from,
-            "To: " + _secwrap.addr,
-            "MIME-Version: 1.0",
-            "Content-type: text/plain; charset=us-ascii",
-            "Subject: Some subject here",
-            "Message-Id: <" + Date.now() + Math.random() + "@enc.snoj.us>",
-            "",
-            encMsg
-          ];
+          });
+
           mci.buildMessage(function(err, compiledMsg) {
-            if(!!err)
+            if (!!err)
               return next(DENY, "Encryption error");
 
             outbound.send_email(mail_from, _secwrap.addr, compiledMsg);
@@ -90,7 +79,7 @@ exports.secwrap_queue = function(next, connection, params) {
           next(DENY, "promise exception");
         });
       })
-    }catch (ex) {
+    } catch (ex) {
       next(DENY, "exception");
     }
   } else {
