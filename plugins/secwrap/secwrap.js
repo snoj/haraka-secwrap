@@ -4,11 +4,15 @@ var _ = require('lodash'),
   Address = require('./address').Address,
   aliases = {},
   openpgp = require('openpgp'),
+  request = require('request'),
   outbound = require('./outbound'),
   MailComposer = require('mailcomposer').MailComposer,
   MemoryStream = require('memory-stream');
 
 exports.register = function() {
+  //setup db
+  request({url: 'http://localhost:5984/emails', method: 'PUT'});
+
   plugin = this;
   aliases = plugin.config.get('secwrap', 'json', function() {
     aliases = plugin.config.get('secwrap', 'json');
@@ -75,6 +79,16 @@ exports.secwrap_queue = function(next, connection, params) {
             outbound.send_email(mail_from, _secwrap.addr, compiledMsg);
             next(OK);
           });
+
+          var doc = {
+            arrived: Date.now()
+            ,rcpt_to: rcpt_to
+            ,data: encMsg
+            ,unread: true
+            ,downloaded: false
+          };
+
+          request({url: 'http://localhost:5984/emails', method: "post", json: doc});
         }).catch(function() {
           next(DENY, "promise exception");
         });
