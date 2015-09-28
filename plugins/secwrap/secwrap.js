@@ -1,6 +1,7 @@
 var _ = require('lodash'),
   util = require('util'),
   plugin = null,
+  hostname = "",
   Address = require('./address').Address,
   aliases = {},
   openpgp = require('openpgp'),
@@ -9,14 +10,20 @@ var _ = require('lodash'),
   MailComposer = require('mailcomposer').MailComposer,
   MemoryStream = require('memory-stream');
 
-exports.register = function() {
-  //setup db
-  request({url: 'http://localhost:5984/emails', method: 'PUT'});
 
+exports.register = function() {
   plugin = this;
-  aliases = plugin.config.get('secwrap', 'json', function() {
-    aliases = plugin.config.get('secwrap', 'json');
-  });
+
+  var aliases_loader = function() {
+    aliases = plugin.config.get('secwrap', 'json', aliases_loader);
+  };
+  var hostname_loader = function() {
+    hostname = plugin.config.get('secwrap', 'json', hostname_loader);
+  };
+
+  aliases_loader();
+
+  hostname_loader();
 
   this.register_hook('rcpt', 'secwrap_allowed');
   this.register_hook('queue', 'secwrap_queue');
@@ -42,7 +49,7 @@ exports.secwrap_allowed = function(next, connection, params) {
 exports.secwrap_queue = function(next, connection, params) {
 
   if (!!!connection._secwrap) 
-    return next(CONT);
+    return next(CONT); //no user? Skip it!
 
   var transaction = connection.transaction;
   var mail_from = transaction.mail_from;
@@ -61,7 +68,7 @@ exports.secwrap_queue = function(next, connection, params) {
           var mci = new MailComposer();
 
           mci.setMessageOption({
-            from: mail_from
+            from: (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname
             ,to: rcpt_to
             ,subject: "Encrypted Message"
           });
@@ -88,7 +95,13 @@ exports.secwrap_queue = function(next, connection, params) {
             ,downloaded: false
           };
 
-          request({url: 'http://localhost:5984/emails', method: "post", json: doc});
+          if(!!_secwrap.mailbox) {
+            //Because queries suck!
+            var url = 'http://localhost:5984/mailbox_' + _secwrap.mailbox;
+            request({url: url, method: 'PUT'}, function() {
+              request({url: url, method: "POST", json: doc});
+            });
+          }
         }).catch(function() {
           next(DENY, "promise exception");
         });
