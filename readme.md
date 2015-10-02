@@ -15,7 +15,7 @@ npm install
 nano config/rcpt_to.secwrap
 
 #enable secwrap
-echo secwrap/secwrap >> config/smtp.ini
+echo secwrap/secwrap >> config/plugins
 
 #run
 haraka -c .
