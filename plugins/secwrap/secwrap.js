@@ -3,7 +3,9 @@ var _ = require('lodash'),
   plugin = null,
   hostname = "",
   Address = require('./address').Address,
-  aliases = {},
+  rests = {},
+  rest_userlookup = function() {},
+  rest_storage = function() {},
   openpgp = require('openpgp'),
   request = require('request'),
   outbound = require('./outbound'),
@@ -14,16 +16,14 @@ var _ = require('lodash'),
 exports.register = function() {
   plugin = this;
 
-  var aliases_loader = function() {
-    aliases = plugin.config.get('secwrap', 'json', aliases_loader);
-  };
-  var hostname_loader = function() {
-    hostname = plugin.config.get('secwrap', 'json', hostname_loader);
-  };
+  rests_loader = function() {
+    rests = plugin.config.get('secwrap', 'json', rests_loader);
+    rest_userlookup = _.template(rests.userlookup);
+    rest_storage = _.template(rests.storage);
+  }
+  hostname = plugin.config.get("me");
 
-  aliases_loader();
-
-  hostname_loader();
+  rests_loader();
 
   this.register_hook('rcpt', 'secwrap_allowed');
   this.register_hook('queue', 'secwrap_queue');
@@ -33,17 +33,26 @@ exports.register = function() {
 exports.secwrap_allowed = function(next, connection, params) {
   var 
       rcpt = params[0],
-      _secwrap;
-  
-  if (aliases[rcpt.host] && aliases[rcpt.host].addrs && (aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"])) {
-    _secwrap = aliases[rcpt.host].addrs[rcpt.user] || aliases[rcpt.host].addrs["*"];
-    if (!!_secwrap) {
-      connection._secwrap = _secwrap
-      connection.transaction.parse_body = true;
-      return next(OK);
+      _secwrap
+
+  var tUrl = rest_userlookup({
+    host: rcpt.host
+    ,rcpt_to: rcpt.user
+    ,mail_from: ""
+  });
+
+
+  request({url: tUrl}, function(err, res, body) {
+    if(!!err || res.statusCode != 200) {
+      next(CONT);
+      return;
     }
-  }
-  next(CONT);
+
+    connection._secwrap = body;
+    connection.transaction.parse_body = true;
+    next(OK);
+  });
+  //next(CONT);
 };
 
 exports.secwrap_queue = function(next, connection, params) {
@@ -66,9 +75,9 @@ exports.secwrap_queue = function(next, connection, params) {
 
         openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
           var mci = new MailComposer();
-
+          var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
           mci.setMessageOption({
-            from: (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname
+            from: tMail_from
             ,to: rcpt_to
             ,subject: "Encrypted Message"
           });
@@ -83,25 +92,28 @@ exports.secwrap_queue = function(next, connection, params) {
             if (!!err)
               return next(DENY, "Encryption error");
 
-            outbound.send_email(mail_from, _secwrap.addr, compiledMsg);
-            next(OK);
-          });
+            if(!!_secwrap.forward) {
+              outbound.send_email(tMail_from, _secwrap.forward, compiledMsg);
+            }
+            if(!!_secwrap.mailbox) {
+              var doc = {
+              arrived: Date.now()
+              ,rcpt_to: rcpt_to
+              ,data: encMsg
+              ,unread: true
+              ,downloaded: false
+            };
 
-          var doc = {
-            arrived: Date.now()
-            ,rcpt_to: rcpt_to
-            ,data: encMsg
-            ,unread: true
-            ,downloaded: false
-          };
-
-          if(!!_secwrap.mailbox) {
-            //Because queries suck!
-            var url = 'http://localhost:5984/mailbox_' + _secwrap.mailbox;
+            var url = rest_storage({
+              mailbox: _secwrap.mailbox
+              ,rcpt_to: _secwrap.addr
+              ,mail_from: mail_from
+            });
             request({url: url, method: 'PUT'}, function() {
               request({url: url, method: "POST", json: doc});
             });
-          }
+            next(OK);
+          });
         }).catch(function() {
           next(DENY, "promise exception");
         });

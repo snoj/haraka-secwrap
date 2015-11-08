@@ -1,11 +1,4 @@
 {
-  "example.com": {
-    "addrs": {
-      "*": {
-        "type": "forward"
-        ,"addr": "user@example.com"
-        ,"key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: GnuPG v2.0.22 (GNU/Linux)\n\n\n-----END PGP PUBLIC KEY BLOCK-----\n"
-      }
-    }
-  }
+  "userlookup": "http://user:password@localhost:8025/from/{mail_from}/to/{rcpt_to}"
+  ,"storage": "http://user:password@localhost:8025/mailbox/{mailbox}"
 }
