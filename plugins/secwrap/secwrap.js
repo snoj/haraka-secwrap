@@ -98,10 +98,10 @@ exports.secwrap_queue = function(next, connection, params) {
             if(!!_secwrap.mailbox) {
               var doc = {
               arrived: Date.now()
+              ,mail_from: tMail_from
               ,rcpt_to: rcpt_to
-              ,data: encMsg
-              ,unread: true
-              ,downloaded: false
+              ,message: encMsg
+              ,keythumbprint: 
             };
 
             var url = rest_storage({
