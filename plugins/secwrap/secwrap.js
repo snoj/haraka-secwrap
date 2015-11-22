@@ -6,6 +6,7 @@ var _ = require('lodash'),
   rests = {},
   rest_userlookup = function() {},
   rest_storage = function() {},
+  rests_loader = null,
   openpgp = require('openpgp'),
   request = require('request'),
   outbound = require('./outbound'),
@@ -97,21 +98,22 @@ exports.secwrap_queue = function(next, connection, params) {
             }
             if(!!_secwrap.mailbox) {
               var doc = {
-              arrived: Date.now()
-              ,mail_from: tMail_from
-              ,rcpt_to: rcpt_to
-              ,message: encMsg
-              ,keythumbprint: 
-            };
+                arrived: Date.now()
+                ,mail_from: tMail_from
+                ,rcpt_to: rcpt_to
+                ,message: encMsg
+                ,keythumbprint: ""
+              };
 
-            var url = rest_storage({
-              mailbox: _secwrap.mailbox
-              ,rcpt_to: _secwrap.addr
-              ,mail_from: mail_from
-            });
-            request({url: url, method: 'PUT'}, function() {
-              request({url: url, method: "POST", json: doc});
-            });
+              var url = rest_storage({
+                mailbox: _secwrap.mailbox
+                ,rcpt_to: _secwrap.addr
+                ,mail_from: mail_from
+              });
+              request({url: url, method: 'PUT'}, function() {
+                request({url: url, method: "POST", json: doc});
+              });
+            }
             next(OK);
           });
         }).catch(function() {
