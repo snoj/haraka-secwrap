@@ -13,6 +13,18 @@ echo haraka-secwrap >> config/plugins
 {
   "userlookup": "http://localhost:8025/from/${ mail_from }/to/${ rcpt_to }"
   ,"storage": "http://localhost:8025/mailbox/${ mailbox }"
+  ,"local": { //for self contained setups
+    "a.example.com": {
+      "key": "====KEY==== blahblahblahblahblahblah =====END KEY===="
+      ,"forward": "joeblack@b.example.com"
+      ,"hidesender": true
+    }
+    ,"Megan@c.example.com": {
+      "key": "====KEY==== blahblahblahblahblahblah =====END KEY===="
+      ,"forward": "MeganMcExample@b.example.com"
+      ,"hidesender": true
+    }
+  }
 }
 
 #create http(s) server using express or restify to handle urls from config/secwrap
@@ -29,7 +41,7 @@ haraka -c .
   "key": "user's public PGP/GPG key",
   "mailbox": "optional. if set, secwrap will use the storage url. can be any sort of identifying string.",
   "forward": "optional. if set, encrypted mail will be sent to this address."
-  "hidesender": "optional. hides the address the original email was sent from."
+  "hidesender": "optional. truthy. hides the address the original email was sent from."
 }
 ```
 

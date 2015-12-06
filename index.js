@@ -16,13 +16,14 @@ var _ = require('lodash'),
 //from haraka_dir/node_modules can't find native haraka tools 
 //like ./outbound.js
 var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }));
+var Address = require(_.keys(require.cache).find(function(v) { return /haraka\/address\.js$/i.test(v); })).Address;
 
 exports.register = function() {
   plugin = this;
   rests_loader = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
-    rest_userlookup = _.template(rests.userlookup);
-    rest_storage = _.template(rests.storage);
+    rest_userlookup = _.template(rests.userlookup || "");
+    rest_storage = _.template(rests.storage || "");
   }
   hostname = plugin.config.get("me");
 
@@ -36,7 +37,7 @@ exports.register = function() {
 exports.secwrap_allowed = function(next, connection, params) {
   var 
       rcpt = params[0],
-      _secwrap
+      _secwrap;
 
   var tUrl = rest_userlookup({
     host: rcpt.host
@@ -44,18 +45,29 @@ exports.secwrap_allowed = function(next, connection, params) {
     ,mail_from: ""
   });
 
+  if(rests.local) {
+    var addr = new Address(rcpt);
+    if(typeof rests.local[addr.address()] !== 'undefined')
+      connection._secwrap = rests.local[addr.address()];
+    else if(typeof rests.local[addr.host] !== 'undefined')
+      connection._secwrap = rests.local[addr.host];
 
-  request({url: tUrl}, function(err, res, body) {
-    if(!!err || res.statusCode != 200) {
-      next(CONT);
-      return;
-    }
+    if(!!connection._secwrap)
+      next(OK);
+  }
 
-    connection._secwrap = body;
-    connection.transaction.parse_body = true;
-    next(OK);
-  });
-  //next(CONT);
+  if(!!!connection._secwrap) {
+    request({url: tUrl}, function(err, res, body) {
+      if(!!err || res.statusCode != 200) {
+        next(CONT);
+        return;
+      }
+
+      connection._secwrap = body;
+      connection.transaction.parse_body = true;
+      next(OK);
+    });
+  }
 };
 
 exports.secwrap_queue = function(next, connection, params) {
