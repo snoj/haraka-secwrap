@@ -15,10 +15,10 @@ var _ = require('lodash'),
 //since root doesn't seem to inherit NODE_PATH and plugins loaded
 //from haraka_dir/node_modules can't find native haraka tools 
 //like ./outbound.js
-var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }));
-var Address = require(_.keys(require.cache).find(function(v) { return /haraka\/address\.js$/i.test(v); })).Address;
-
+var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }) || './outbound.js');
+var Address = require(_.keys(require.cache).find(function(v) { return /haraka\/address\.js$/i.test(v); }) || './address.js').Address;
 exports.register = function() {
+this.logdebug(typeof Address)
   plugin = this;
   rests_loader = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
@@ -52,8 +52,10 @@ exports.secwrap_allowed = function(next, connection, params) {
     else if(typeof rests.local[addr.host] !== 'undefined')
       connection._secwrap = rests.local[addr.host];
 
-    if(!!connection._secwrap)
+    if(!!connection._secwrap) {
+      connection.transaction.parse_body = true;
       next(OK);
+    }
   }
 
   if(!!!connection._secwrap) {
@@ -89,21 +91,20 @@ exports.secwrap_queue = function(next, connection, params) {
         var publicKey = openpgp.key.readArmored(_secwrap.key);
 
         openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
-          var mci = new MailComposer();
           var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
-          mci.setMessageOption({
+          var mci_opts = {
             from: tMail_from
             ,to: rcpt_to
             ,subject: "Encrypted Message"
-          });
+            ,attachments: [{
+              filename: "email.eml.gpg"
+              ,contents: encMsg
+              ,contentType: "application/pgp-encrypted"
+            }]
+          };
+          var mci = new MailComposer(mci_opts);
 
-          mci.addAttachment({
-            filename: "email.eml.gpg"
-            ,contents: encMsg
-            ,contentType: "application/pgp-encrypted"
-          });
-
-          mci.buildMessage(function(err, compiledMsg) {
+          mci.build(function(err, compiledMsg) {
             if (!!err)
               return next(DENY, "Encryption error");
 
