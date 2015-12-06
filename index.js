@@ -133,12 +133,12 @@ exports.secwrap_queue = function(next, connection, params) {
           });
         }).catch(function() {
           next(DENY, "promise exception");
-          connection.logerror("promise exception: ", argument[0]);
+          connection.logdebug("promise exception: ", argument[0]);
         });
       })
     } catch (ex) {
       next(DENY, "exception");
-      connection.logerror("exception: ", ex);
+      connection.logdebug("exception: ", ex);
     }
   } else {
     next(DENY, "no body"); 
