@@ -1,22 +1,24 @@
 var _ = require('lodash'),
   util = require('util'),
   plugin = null,
-  hostname = "",
-  Address = require('./address').Address,
+  hostname = "localhost",
   rests = {},
   rest_userlookup = function() {},
   rest_storage = function() {},
   rests_loader = null,
   openpgp = require('openpgp'),
   request = require('request'),
-  outbound = require('./outbound'),
   MailComposer = require('mailcomposer').MailComposer,
   MemoryStream = require('memory-stream');
 
+//might not be the brightest of ideas...but I'm out of others 
+//since root doesn't seem to inherit NODE_PATH and plugins loaded
+//from haraka_dir/node_modules can't find native haraka tools 
+//like ./outbound.js
+var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }));
 
 exports.register = function() {
   plugin = this;
-
   rests_loader = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
     rest_userlookup = _.template(rests.userlookup);
