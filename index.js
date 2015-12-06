@@ -131,14 +131,14 @@ exports.secwrap_queue = function(next, connection, params) {
             }
             next(OK);
           });
-        }).catch(function() {
+        }).catch(function(ex) {
+          plugin.logdebug("promise exception: ", ex);
           next(DENY, "promise exception");
-          connection.logdebug("promise exception: ", argument[0]);
         });
       })
     } catch (ex) {
+      plugin.logdebug("exception: ", ex);
       next(DENY, "exception");
-      connection.logdebug("exception: ", ex);
     }
   } else {
     next(DENY, "no body"); 
