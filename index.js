@@ -8,7 +8,7 @@ var _ = require('lodash'),
   rests_loader = null,
   openpgp = require('openpgp'),
   request = require('request'),
-  MailComposer = require('mailcomposer').MailComposer,
+  MailComposer = require('mailcomposer'),
   MemoryStream = require('memory-stream');
 
 //might not be the brightest of ideas...but I'm out of others 
@@ -18,7 +18,6 @@ var _ = require('lodash'),
 var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }) || './outbound.js');
 var Address = require(_.keys(require.cache).find(function(v) { return /haraka\/address\.js$/i.test(v); }) || './address.js').Address;
 exports.register = function() {
-this.logdebug(typeof Address)
   plugin = this;
   rests_loader = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
@@ -94,22 +93,23 @@ exports.secwrap_queue = function(next, connection, params) {
           var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
           var mci_opts = {
             from: tMail_from
-            ,to: rcpt_to
+            ,to: rcpt_to.toString()
             ,subject: "Encrypted Message"
             ,attachments: [{
               filename: "email.eml.gpg"
               ,contents: encMsg
               ,contentType: "application/pgp-encrypted"
             }]
+            ,text: "A message from the NSA."
           };
-          var mci = new MailComposer(mci_opts);
+          var mci = MailComposer(mci_opts);
 
           mci.build(function(err, compiledMsg) {
             if (!!err)
               return next(DENY, "Encryption error");
 
             if(!!_secwrap.forward) {
-              outbound.send_email(tMail_from, _secwrap.forward, compiledMsg);
+              outbound.send_email(tMail_from, _secwrap.forward, compiledMsg.toString('ascii'));
             }
             if(!!_secwrap.mailbox) {
               var doc = {
@@ -132,7 +132,7 @@ exports.secwrap_queue = function(next, connection, params) {
             next(OK);
           });
         }).catch(function(ex) {
-          plugin.logdebug("promise exception: ", ex);
+          plugin.logdebug("promise exception: ", arguments, ex.stack);
           next(DENY, "promise exception");
         });
       })
