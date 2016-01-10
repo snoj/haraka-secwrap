@@ -23,6 +23,7 @@ exports.register = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
     rest_userlookup = _.template(rests.userlookup || "");
     rest_storage = _.template(rests.storage || "");
+    rest_senderkeylookup = _.template(rests.senderkeylookup || "");
   }
   hostname = plugin.config.get("me");
 
@@ -44,27 +45,48 @@ exports.secwrap_allowed = function(next, connection, params) {
     ,mail_from: ""
   });
 
-  if(rests.local) {
-    var addr = new Address(rcpt);
-    if(typeof rests.local[addr.address()] !== 'undefined')
-      connection._secwrap = rests.local[addr.address()];
-    else if(typeof rests.local[addr.host] !== 'undefined')
-      connection._secwrap = rests.local[addr.host];
+  var senderkeyUrl = senderkeylookup({
+    rcpt_to_thumbprint: ""
+    ,mail_from_thumbprint: ""
+  });
 
-    if(!!connection._secwrap) {
-      connection.transaction.parse_body = true;
+  if(rests.local) {
+    var fromaddr = new Address(connection.transaction.mail_from);
+    var addr = new Address(rcpt);
+
+    if(typeof rests.local[addr.address()] !== 'undefined')
+      connection.notes._secwrap = rests.local[addr.address()];
+    else if(typeof rests.local[addr.host] !== 'undefined')
+      connection.notes._secwrap = rests.local[addr.host];
+
+    try {
+      //look for sender keys locally and remotely.
+      //reject or accept based on user preferences.
+      var user = _.find(rests.local, function(u) {
+        var k = openpgp.key.readArmored(u.key);
+        var r = new RegExp("^" + k.keys[0].primaryKey.fingerprint + "$", "i");
+        return r.test(addr.user);
+      });
+      if(!!user) {
+        connection.notes._secwrap = user;
+        connection.notes._prepackaged = true;
+      }
+    } catch(ex) { }
+
+    if(!!connection.notes._secwrap) {
+      connection.transaction.parse_body = !connection.notes._prepackaged;
       next(OK);
     }
   }
 
-  if(!!!connection._secwrap) {
+  if(!!!connection.notes._secwrap) {
     request({url: tUrl}, function(err, res, body) {
       if(!!err || res.statusCode != 200) {
         next(CONT);
         return;
       }
 
-      connection._secwrap = body;
+      connection.notes_secwrap = body;
       connection.transaction.parse_body = true;
       next(OK);
     });
@@ -73,31 +95,28 @@ exports.secwrap_allowed = function(next, connection, params) {
 
 exports.secwrap_queue = function(next, connection, params) {
 
-  if (!!!connection._secwrap) 
+  if (!!!connection.notes._secwrap)
     return next(CONT); //no user? Skip it!
 
   var transaction = connection.transaction;
   var mail_from = transaction.mail_from;
   var rcpt_to = transaction.rcpt_to;
-  var _secwrap = connection._secwrap;
+  var _secwrap = connection.notes._secwrap;
 
   if (!!transaction.body) {
     try {
       var ms = new MemoryStream();
       transaction.message_stream.pipe(ms);
       
-      ms.on('finish', function() {
-        var publicKey = openpgp.key.readArmored(_secwrap.key);
-
-        openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
-          var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
+      var storeproc = function(msg, sig, senderkey) {
+        var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
           var mci_opts = {
             from: tMail_from
             ,to: rcpt_to.toString()
             ,subject: "Encrypted Message"
             ,attachments: [{
               filename: "email.eml.gpg"
-              ,contents: encMsg
+              ,contents: msg
               ,contentType: "application/pgp-encrypted"
             }]
             ,text: "A message from the NSA."
@@ -116,7 +135,7 @@ exports.secwrap_queue = function(next, connection, params) {
                 arrived: Date.now()
                 ,mail_from: tMail_from
                 ,rcpt_to: rcpt_to
-                ,message: encMsg
+                ,message: msg
                 ,keythumbprint: ""
               };
 
@@ -131,11 +150,49 @@ exports.secwrap_queue = function(next, connection, params) {
             }
             next(OK);
           });
+      };
+
+      var prepackaged = function(bodyms) {
+        throw "Not implemented";
+        var b = bodyms.toString('ascii');
+        var partcount = b.match(/^-----/gm).length;
+        var parts = _.map(b.match(/^-----BEGIN (.+)-----$/gm), function(v) {
+          return v.match(/^-----BEGIN (.+)-----$/)[1];
+        });
+        var msg = "";
+        var sig = "";
+        var senderkey = "";
+        _.each(parts, function(v) {
+          var rt = new RegExp('-----BEGIN ' + v + '-----([.\w\s\r\n\W]*)-----END ' + v + '-----')
+          var subpart = t.match(rt)[0];
+
+          if(/message/i.test(v))
+            msg = subpart;
+          else if(/signature/i.test(v))
+            sig = subpart;
+          else if(/PUBLIC KEY BLOCK/i.test(v))
+            senderkey = subpart;
+        });
+
+        storeproc(msg, sig, senderkey);
+      };
+      var plain = function (bodyms) {
+        openpgp.encryptMessage(publicKey.keys, bodyms.toString('ascii')).then(function(encMsg) {
+          storeproc(encMsg);
         }).catch(function(ex) {
           plugin.logdebug("promise exception: ", arguments, ex.stack);
           next(DENY, "promise exception");
         });
-      })
+      };
+
+      ms.on('finish', function() {
+        var publicKey = openpgp.key.readArmored(_secwrap.key);
+
+        if(connection.notes._prepackaged)
+          prepackaged(ms);
+        else
+          plain(ms);
+      });
     } catch (ex) {
       plugin.logdebug("exception: ", ex);
       next(DENY, "exception");
