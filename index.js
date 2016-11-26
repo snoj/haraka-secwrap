@@ -23,7 +23,7 @@ exports.register = function() {
     rests = plugin.config.get('secwrap', 'json', rests_loader);
     rest_userlookup = _.template(rests.userlookup || "");
     rest_storage = _.template(rests.storage || "");
-  }
+  };
   hostname = plugin.config.get("me");
 
   rests_loader();
@@ -39,9 +39,9 @@ exports.secwrap_allowed = function(next, connection, params) {
       _secwrap;
 
   var tUrl = rest_userlookup({
-    host: rcpt.host
-    ,rcpt_to: rcpt.user
-    ,mail_from: ""
+    host: rcpt.host,
+    rcpt_to: rcpt.user,
+    mail_from: ""
   });
 
   if(rests.local) {
@@ -92,15 +92,15 @@ exports.secwrap_queue = function(next, connection, params) {
         openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
           var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
           var mci_opts = {
-            from: tMail_from
-            ,to: rcpt_to.toString()
-            ,subject: "Encrypted Message"
-            ,attachments: [{
-              filename: "email.eml.gpg"
-              ,contents: encMsg
-              ,contentType: "application/pgp-encrypted"
-            }]
-            ,text: "A message from the NSA."
+            from: tMail_from,
+            to: rcpt_to.toString(),
+            subject: "Encrypted Message",
+            attachments: [{
+              filename: "email.eml.gpg",
+              contents: encMsg,
+              contentType: "application/pgp-encrypted"
+            }],
+            text: "A message from the NSA."
           };
           var mci = MailComposer(mci_opts);
 
@@ -113,29 +113,30 @@ exports.secwrap_queue = function(next, connection, params) {
             }
             if(!!_secwrap.mailbox) {
               var doc = {
-                arrived: Date.now()
-                ,mail_from: tMail_from
-                ,rcpt_to: rcpt_to
-                ,message: encMsg
-                ,keythumbprint: ""
+                arrived: Date.now(),
+                mail_from: tMail_from,
+                rcpt_to: rcpt_to,
+                message: encMsg,
+                keythumbprint: ""
               };
 
               var url = rest_storage({
-                mailbox: _secwrap.mailbox
-                ,rcpt_to: _secwrap.addr
-                ,mail_from: mail_from
+                mailbox: _secwrap.mailbox,
+                rcpt_to: _secwrap.addr,
+                mail_from: mail_from
               });
               request({url: url, method: 'PUT'}, function() {
                 request({url: url, method: "POST", json: doc});
               });
             }
+
             next(OK);
           });
         }).catch(function(ex) {
           plugin.logdebug("promise exception: ", arguments, ex.stack);
           next(DENY, "promise exception");
         });
-      })
+      });
     } catch (ex) {
       plugin.logdebug("exception: ", ex);
       next(DENY, "exception");
@@ -143,4 +144,4 @@ exports.secwrap_queue = function(next, connection, params) {
   } else {
     next(DENY, "no body"); 
   }
-}
+};
