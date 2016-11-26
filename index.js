@@ -16,7 +16,7 @@ var _ = require('lodash'),
 //from haraka_dir/node_modules can't find native haraka tools 
 //like ./outbound.js
 var outbound = require(_.keys(require.cache).find(function(v) { return /haraka\/outbound\.js$/i.test(v); }) || './outbound.js');
-var Address = require(_.keys(require.cache).find(function(v) { return /haraka\/address\.js$/i.test(v); }) || './address.js').Address;
+var Address = require(_.keys(require.cache).find(function(v) { return /address-rfc2821/i.test(v); }) || './address.js').Address;
 exports.register = function() {
   plugin = this;
   rests_loader = function() {
@@ -44,6 +44,7 @@ exports.secwrap_allowed = function(next, connection, params) {
     mail_from: ""
   });
 
+  //todo promise this up
   if(rests.local) {
     var addr = new Address(rcpt);
     if(typeof rests.local[addr.address()] !== 'undefined')
@@ -88,9 +89,13 @@ exports.secwrap_queue = function(next, connection, params) {
       
       ms.on('finish', function() {
         var publicKey = openpgp.key.readArmored(_secwrap.key);
-
-        openpgp.encryptMessage(publicKey.keys, ms.toString('ascii')).then(function(encMsg) {
-          var tMail_from = (!!!_secwrap.hidesender) ? mail_from : "secmail@" + hostname;
+        var eopts = {
+          publicKeys: publicKey.keys,
+          data: ms.toString('ascii')
+        };
+        openpgp.encrypt(eopts).then(function(encMsg) {
+          //plugin.logdebug("oasuvmw", arguments);
+          var tMail_from = (!!!_secwrap.hidesender) ? mail_from.toString() : "secmail@" + hostname;
           var mci_opts = {
             from: tMail_from,
             to: rcpt_to.toString(),
@@ -111,13 +116,15 @@ exports.secwrap_queue = function(next, connection, params) {
             if(!!_secwrap.forward) {
               outbound.send_email(tMail_from, _secwrap.forward, compiledMsg.toString('ascii'));
             }
+
             if(!!_secwrap.mailbox) {
               var doc = {
                 arrived: Date.now(),
                 mail_from: tMail_from,
                 rcpt_to: rcpt_to,
                 message: encMsg,
-                keythumbprint: ""
+                mailbox: _secwrap.mailbox,
+                keythumbprint: publicKey.keys[0].primaryKey.getFingerprint()
               };
 
               var url = rest_storage({
@@ -125,8 +132,10 @@ exports.secwrap_queue = function(next, connection, params) {
                 rcpt_to: _secwrap.addr,
                 mail_from: mail_from
               });
-              request({url: url, method: 'PUT'}, function() {
-                request({url: url, method: "POST", json: doc});
+
+              request({url: url, method: "POST", json: doc}, function(err, resp) {
+                if(err)
+                  plugin.logerror(err, resp);
               });
             }
 
